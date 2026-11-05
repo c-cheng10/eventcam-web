@@ -1,0 +1,11 @@
+{
+  "name": "eventcam-web",
+  "private": true,
+  "type": "module",
+  "description": "Turn any webcam into an event camera, live in your browser.",
+  "license": "MIT",
+  "scripts": {
+    "serve": "node tests/server.mjs",
+    "test": "node tests/smoke.mjs"
+  }
+}

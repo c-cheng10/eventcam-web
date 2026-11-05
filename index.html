@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eventcam: webcam event camera</title>
+  <meta name="description" content="Turn any webcam into an emulated event camera (DVS), live in your browser. Runs entirely client-side.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>eventcam</h1>
+      <p class="tagline">Turn any webcam into an event camera, live in your browser.</p>
+    </div>
+    <p class="privacy" title="All processing happens in this tab. Nothing is uploaded.">
+      <span class="dot" aria-hidden="true"></span>Runs 100% in your browser. No video leaves this device.
+    </p>
+  </header>
+
+  <main class="app">
+    <section class="stage-col">
+      <div class="stage" id="stage">
+        <canvas id="events" class="events" aria-label="Event view"></canvas>
+        <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
+        <div class="inset" id="inset" title="Raw input"></div>
+        <div class="legend">
+          <span><i class="sw on"></i>ON</span>
+          <span><i class="sw off"></i>OFF</span>
+        </div>
+        <div class="source-badge" id="sourceBadge">synthetic</div>
+      </div>
+
+      <div class="statbar" id="statbar">
+        <div><span class="k">events/s</span><span class="v" id="sEvps">-</span></div>
+        <div><span class="k">ON/OFF</span><span class="v" id="sRatio">-</span></div>
+        <div><span class="k">fps</span><span class="v" id="sFps">-</span></div>
+        <div><span class="k">proc</span><span class="v" id="sMs">-</span></div>
+        <div><span class="k">filtered/s</span><span class="v" id="sFilt">-</span></div>
+      </div>
+
+      <div class="panel freq" id="freqPanel">
+        <div class="freq-main">
+          <div>
+            <div class="k">dominant frequency</div>
+            <div class="big" id="fDominant">-</div>
+          </div>
+          <div>
+            <div class="k">Nyquist limit (fps / 2)</div>
+            <div class="big dim" id="fNyquist">-</div>
+          </div>
+        </div>
+        <div class="peaks" id="fPeaks"></div>
+        <div class="colorbar-wrap">
+          <div class="colorbar" id="colorbar"></div>
+          <div class="colorbar-ticks"><span>0 Hz</span><span id="cbMid"></span><span id="cbMax"></span></div>
+        </div>
+        <p class="note">A webcam samples at its frame rate, so it can't resolve anything that changes faster than
+          the Nyquist limit. Faster flicker aliases to a false, lower frequency. A real event camera timestamps each
+          event with microsecond precision and can measure kHz-range signals like drone propellers.</p>
+      </div>
+    </section>
+
+    <aside class="controls">
+      <div class="panel">
+        <h2>Source</h2>
+        <div class="btn-row">
+          <button id="btnCamera" class="btn primary">Use my webcam</button>
+          <button id="btnSynth" class="btn">Synthetic demo</button>
+        </div>
+        <p class="status" id="status">Synthetic scene running. Click "Use my webcam" to try your own camera.</p>
+        <label class="row">Resolution
+          <select id="resolution">
+            <option value="160x120">160 × 120</option>
+            <option value="320x240" selected>320 × 240</option>
+            <option value="640x480">640 × 480</option>
+          </select>
+        </label>
+        <div id="synthOpts">
+          <label class="row">Synthetic fps
+            <select id="synthFps">
+              <option value="30" selected>30</option>
+              <option value="60">60</option>
+              <option value="120">120</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="aliasToggle"> Add a 22 Hz square (aliases at 30 fps)</label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Sensor model</h2>
+        <label class="slider">Contrast threshold C <output id="oC">0.20</output>
+          <input type="range" id="cC" min="0.05" max="1" step="0.01" value="0.2">
+        </label>
+        <label class="slider">Refractory period <output id="oRefr">1 ms</output>
+          <input type="range" id="cRefr" min="0" max="100" step="1" value="1">
+        </label>
+        <label class="check"><input type="checkbox" id="cNoise" checked> Background-activity noise filter</label>
+        <label class="slider">Filter window <output id="oBA">40 ms</output>
+          <input type="range" id="cBA" min="5" max="200" step="5" value="40">
+        </label>
+      </div>
+
+      <div class="panel">
+        <h2>Display</h2>
+        <label class="slider">Decay time constant <output id="oDecay">60 ms</output>
+          <input type="range" id="cDecay" min="0" max="1000" step="10" value="60">
+        </label>
+        <label class="check"><input type="checkbox" id="cHeat" checked> Frequency heatmap overlay</label>
+        <label class="slider">Min. peak strength <output id="oStrength">0.35</output>
+          <input type="range" id="cStrength" min="0.1" max="0.9" step="0.05" value="0.35">
+        </label>
+        <label class="check"><input type="checkbox" id="cInset" checked> Show raw input inset</label>
+      </div>
+
+      <div class="panel" id="recPanel">
+        <h2>Record &amp; export</h2>
+        <div class="btn-row">
+          <button id="btnRec" class="btn rec"><span class="recdot" aria-hidden="true"></span><span id="recLabel">Record</span></button>
+          <button id="btnClear" class="btn" disabled>Clear</button>
+        </div>
+        <div class="rec-counter"><span id="recCount">0</span> / <span id="recCap">5,000,000</span> events · <span id="recDur">0.0 s</span></div>
+        <div class="meter"><div id="recMeter"></div></div>
+        <div class="btn-row">
+          <button id="btnCsv" class="btn small" disabled>CSV</button>
+          <button id="btnBin" class="btn small" disabled>Binary .bin</button>
+          <button id="btnJson" class="btn small" disabled>Sidecar .json</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <article class="explainer" id="explainer">
+    <!-- filled in milestone 3 -->
+  </article>
+
+  <footer class="foot">
+    <span>MIT licensed · <a href="https://github.com/c-cheng10/eventcam-web">source on GitHub</a></span>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
