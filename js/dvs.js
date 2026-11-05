@@ -10,7 +10,9 @@
 // All state lives in typed arrays. No per-pixel or per-event objects.
 
 const LUMA_EPS = 5; // in 8-bit luma units; keeps dark pixels from exploding in log space
-const SLOTS = 16; // sub-frame time slots used to keep emitted events time-ordered
+// Events inside a frame are spread over the frame interval and quantised to one of
+// SLOTS sub-frame time slots, so the emitted stream is strictly time ordered.
+const SLOTS = 16;
 
 export class DVS {
   constructor(width, height) {
@@ -171,7 +173,7 @@ export class DVS {
             let s = (frac * SLOTS) | 0;
             if (s >= SLOTS) s = SLOTS - 1;
             this._tmpX[m] = x; this._tmpY[m] = y; this._tmpP[m] = p;
-            this._tmpT[m] = tPrev + frac * dt; this._tmpS[m] = s;
+            this._tmpT[m] = tPrev + ((s + 1) / SLOTS) * dt; this._tmpS[m] = s;
             slotCount[s + 1]++;
             m++;
           }
@@ -180,7 +182,7 @@ export class DVS {
     }
 
     if (wantList) {
-      // Counting sort by sub-frame slot so the stream is (approximately) time ordered.
+      // Counting sort by sub-frame slot: all events in a slot share one timestamp.
       for (let s = 1; s <= SLOTS; s++) slotCount[s] += slotCount[s - 1];
       const { evX, evY, evP, evT, _tmpX, _tmpY, _tmpP, _tmpT, _tmpS } = this;
       for (let e = 0; e < m; e++) {
