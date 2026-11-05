@@ -4,6 +4,7 @@ import { Pipeline } from './pipeline.js';
 import { SyntheticSource, SYNTH_W, SYNTH_H } from './synthetic.js';
 import { PeriodicDetector } from './periodic.js';
 import { drawOverlay, turbo, turboGradient } from './overlay.js';
+import { Recorder, MAX_EVENTS, download } from './recorder.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
@@ -14,6 +15,8 @@ const synth = new SyntheticSource();
 const detector = new PeriodicDetector();
 pipeline.listeners.push(detector);
 detector.resize(pipeline);
+const recorder = new Recorder();
+pipeline.listeners.push(recorder);
 
 const state = {
   mode: 'none', // 'synthetic' | 'camera'
@@ -200,6 +203,52 @@ setInterval(() => {
   $('sFilt').textContent = pipeline.dvs.noiseFilter ? fmtInt(s.filtps) : 'off';
 }, 500);
 
+// ---------- recording ----------
+
+$('recCap').textContent = fmtInt(MAX_EVENTS);
+
+function updateRecUI() {
+  const rec = recorder.recording;
+  $('btnRec').classList.toggle('recording', rec);
+  $('recLabel').textContent = rec ? 'Stop' : 'Record';
+  $('recCount').textContent = fmtInt(recorder.n);
+  $('recDur').textContent = `${recorder.durationSec().toFixed(1)} s`;
+  $('recMeter').style.width = `${(100 * recorder.n / MAX_EVENTS).toFixed(2)}%`;
+  const has = recorder.n > 0 && !rec;
+  for (const id of ['btnCsv', 'btnBin', 'btnJson']) $(id).disabled = !has;
+  $('btnClear').disabled = rec || recorder.n === 0;
+}
+
+recorder.onAutoStop = () => {
+  updateRecUI();
+  if (recorder.full) setStatus(`Recording stopped at the ${fmtInt(MAX_EVENTS)}-event cap.`);
+};
+
+$('btnRec').addEventListener('click', () => {
+  if (recorder.recording) recorder.stop(pipeline);
+  else {
+    recorder.start(pipeline, {
+      source: state.mode,
+      width: pipeline.w,
+      height: pipeline.h,
+      contrast_threshold: pipeline.dvs.C,
+      refractory_ms: pipeline.dvs.refractory * 1000,
+      noise_filter: pipeline.dvs.noiseFilter,
+      noise_filter_window_ms: pipeline.dvs.noiseFilter ? pipeline.dvs.baWindow * 1000 : null,
+      clock: state.clock,
+    });
+  }
+  updateRecUI();
+});
+$('btnClear').addEventListener('click', () => { recorder.clear(); updateRecUI(); });
+
+const stamp = () => (recorder.meta?.start_time_iso || new Date().toISOString()).replace(/[:.]/g, '-').slice(0, 19);
+$('btnCsv').addEventListener('click', () => download(recorder.toCSV(), `eventcam-${stamp()}.csv`));
+$('btnBin').addEventListener('click', () => download(recorder.toBinary(), `eventcam-${stamp()}.bin`));
+$('btnJson').addEventListener('click', () => download(
+  new Blob([JSON.stringify(recorder.sidecar(), null, 2)], { type: 'application/json' }), `eventcam-${stamp()}.json`));
+setInterval(() => { if (recorder.recording) updateRecUI(); }, 200);
+
 // ---------- periodic-motion readout ----------
 
 function refreshFrequency() {
@@ -239,4 +288,4 @@ if (params.get('source') === 'camera') startCamera();
 else startSynthetic();
 
 // Test/debug hook.
-window.__eventcam = { pipeline, synth, state, detector };
+window.__eventcam = { pipeline, synth, state, detector, recorder };
