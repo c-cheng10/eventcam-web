@@ -2,6 +2,8 @@
 
 import { Pipeline } from './pipeline.js';
 import { SyntheticSource, SYNTH_W, SYNTH_H } from './synthetic.js';
+import { PeriodicDetector } from './periodic.js';
+import { drawOverlay, turbo, turboGradient } from './overlay.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
@@ -9,6 +11,9 @@ const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
 const eventCanvas = $('events');
 const pipeline = new Pipeline(eventCanvas);
 const synth = new SyntheticSource();
+const detector = new PeriodicDetector();
+pipeline.listeners.push(detector);
+detector.resize(pipeline);
 
 const state = {
   mode: 'none', // 'synthetic' | 'camera'
@@ -169,6 +174,10 @@ bindSlider('cRefr', 'oRefr', (v) => `${v} ms`, (v) => { pipeline.dvs.refractory 
 bindSlider('cBA', 'oBA', (v) => `${v} ms`, (v) => { pipeline.dvs.baWindow = v / 1000; });
 bindSlider('cDecay', 'oDecay', (v) => (v === 0 ? 'off' : `${v} ms`), (v) => { pipeline.renderer.tau = v / 1000; });
 
+bindSlider('cStrength', 'oStrength', (v) => v.toFixed(2), (v) => { detector.strengthThreshold = v; });
+$('cHeat').addEventListener('change', () => refreshFrequency());
+$('colorbar').style.background = turboGradient();
+
 $('cNoise').addEventListener('change', (e) => { pipeline.dvs.noiseFilter = e.target.checked; });
 $('cInset').addEventListener('change', (e) => { $('inset').classList.toggle('hidden', !e.target.checked); });
 $('resolution').addEventListener('change', (e) => {
@@ -191,6 +200,36 @@ setInterval(() => {
   $('sFilt').textContent = pipeline.dvs.noiseFilter ? fmtInt(s.filtps) : 'off';
 }, 500);
 
+// ---------- periodic-motion readout ----------
+
+function refreshFrequency() {
+  const res = detector.analyze();
+  drawOverlay($('overlay'), detector, res, $('cHeat').checked);
+  if (!res) {
+    $('fDominant').textContent = '-';
+    $('fNyquist').textContent = '-';
+    $('fPeaks').replaceChildren();
+    return;
+  }
+  const nyq = res.nyquist;
+  $('fNyquist').textContent = `${nyq.toFixed(1)} Hz`;
+  $('cbMid').textContent = `${(nyq / 2).toFixed(1)} Hz`;
+  $('cbMax').textContent = `${nyq.toFixed(1)} Hz`;
+  const top = res.clusters.filter((c) => c.cells >= 2);
+  $('fDominant').textContent = top.length ? `${top[0].freq.toFixed(2)} Hz` : 'none';
+  $('fPeaks').replaceChildren(...top.slice(0, 6).map((c) => {
+    const el = document.createElement('span');
+    el.className = 'peak';
+    const sw = document.createElement('i');
+    const [r, g, b] = turbo(c.freq / nyq);
+    sw.style.background = `rgb(${r},${g},${b})`;
+    el.append(sw, `${c.freq.toFixed(2)} Hz · ${c.cells} cells`);
+    return el;
+  }));
+}
+setInterval(refreshFrequency, 250);
+window.addEventListener('resize', () => drawOverlay($('overlay'), detector, detector.results, $('cHeat').checked));
+
 // ---------- boot ----------
 
 const params = new URLSearchParams(location.search);
@@ -200,4 +239,4 @@ if (params.get('source') === 'camera') startCamera();
 else startSynthetic();
 
 // Test/debug hook.
-window.__eventcam = { pipeline, synth, state };
+window.__eventcam = { pipeline, synth, state, detector };
