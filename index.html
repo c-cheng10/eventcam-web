@@ -132,7 +132,51 @@
   </main>
 
   <article class="explainer" id="explainer">
-    <!-- filled in milestone 3 -->
+    <h2>What is an event camera?</h2>
+    <p>A normal camera takes a full picture many times a second, whether or not anything changed. An event camera
+      (also called a dynamic vision sensor, or DVS) has no frames. Each pixel works on its own and reports only when
+      the brightness it sees changes. Every report is an <em>event</em>: the pixel's position, a timestamp, and a
+      polarity, <span class="on">ON</span> if the pixel got brighter or <span class="off">OFF</span> if it got darker.</p>
+    <p>A still scene produces almost no data. A moving edge produces a thin line of events that follows it. Hardware
+      sensors timestamp events to the microsecond, react to very fast motion without blur, and handle very bright and
+      very dark areas in the same scene.</p>
+
+    <h2>How this page emulates one</h2>
+    <p>Each webcam frame is shrunk to a small grid (320 × 240 by default) and turned into brightness values. For each
+      pixel the page works with the log of brightness, <code>L = ln(Y + ε)</code>, because real event pixels respond to
+      relative change (contrast), not absolute change.</p>
+    <p>Every pixel remembers a reference level. When <code>L − ref ≥ C</code> the pixel fires an ON event and the
+      reference moves up by <code>C</code>. A big change fires several events, one per step of <code>C</code>.
+      Darkening works the same way and gives OFF events. <code>C</code> is the contrast threshold slider: lower it and
+      the sensor gets more sensitive and noisier.</p>
+    <p>Two more pieces copy real sensors. A <strong>refractory period</strong> stops a pixel from firing again too
+      soon. A <strong>background-activity filter</strong> drops an event if none of the pixel's 8 neighbours fired
+      recently. Real motion lights up neighbouring pixels together, while sensor noise shows up as isolated dots.</p>
+    <p>The frequency readout splits the image into 16 × 16 pixel cells. For each cell it keeps the last 3 seconds of
+      ON minus OFF counts, adds them up to rebuild that cell's brightness over time, and runs an FFT four times a
+      second. Cells with a clear peak are coloured by frequency.</p>
+
+    <h2>What a webcam can't do</h2>
+    <p>This is an emulation built from frames, so it inherits the frame rate. A 30 fps webcam takes a sample every
+      33 ms, and events inside one frame interval get spread across it, not truly measured. By the sampling theorem,
+      nothing faster than half the frame rate (the <strong>Nyquist limit</strong>, 15 Hz at 30 fps) can be measured.
+      Faster flicker doesn't vanish. It folds back and shows up as a false, lower frequency. Tick
+      "Add a 22 Hz square" in the synthetic demo to see a 22 Hz blink read as 8 Hz.</p>
+    <p>A webcam also applies auto-exposure, compression and motion blur, none of which a real event pixel has. Event
+      counts and noise here won't match any particular sensor.</p>
+
+    <h2>Why it matters: telling drones from birds</h2>
+    <p>A drone's propellers spin at thousands of RPM, so the blades flicker at hundreds of hertz or more. A bird's
+      wings beat at a few hertz to a few tens of hertz. A real event camera, with microsecond timestamps, can measure
+      that blade frequency directly, even when the drone is only a few pixels across. That rotor signature is a strong
+      cue for spotting drones and telling them apart from birds.</p>
+    <p>A webcam can't see propeller frequencies, since they sit far above its Nyquist limit. What this page shows is
+      the same method at a slower scale: per-region event counts, a frequency transform, and a map of where the
+      periodic motion is. Wave your hand, tap a finger, or point the camera at a blinking LED.</p>
+
+    <h2>Your data</h2>
+    <p>Everything runs in this browser tab. Video frames are never uploaded, and nothing is stored unless you press
+      Record and then save a file yourself.</p>
   </article>
 
   <footer class="foot">
